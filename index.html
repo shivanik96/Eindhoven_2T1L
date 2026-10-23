@@ -176,16 +176,14 @@
 
   /* Results */
   .truth { display: grid; gap: .6rem; margin-bottom: 1.75rem; }
-  .truth-item { display: flex; gap: .9rem; align-items: flex-start; border-radius: 14px; padding: .9rem 1rem; border: 2px solid; }
-  .truth-item.true { background: var(--true-soft); border-color: var(--true); }
-  .truth-item.false { background: var(--false-soft); border-color: var(--false); }
-  .truth-item .verdict { font-weight: 700; }
-  .truth-item.true .verdict { color: var(--true); }
-  .truth-item.false .verdict { color: var(--false); }
-  .truth-item .why { color: var(--muted); font-size: .93rem; margin-top: .25rem; }
-  .truth-item .statement { font-weight: 700; }
-  .truth-item.true .statement { color: var(--true); }
-  .truth-item.false .statement { color: var(--false); }
+  .opt.static.is-true { border-color: var(--true); background: var(--true-soft); }
+  .opt.static.is-false { border-color: var(--false); background: var(--false-soft); }
+  .opt.static.is-true .tag { color: var(--true); }
+  .opt.static.is-false .tag { color: var(--false); }
+  .opt.static.is-true .stmt { color: var(--true); font-weight: 700; }
+  .opt.static.is-false .stmt { color: var(--false); font-weight: 700; }
+  .opt .why { display: block; color: var(--muted); font-size: .93rem; margin-top: .3rem; }
+  .badge.final { background: transparent; color: var(--accent); border: 2px solid var(--accent); padding: 0 .55rem; }
 
   .you { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: .75rem; margin-bottom: 2.25rem; }
   .you div { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: .9rem 1rem; }
@@ -228,7 +226,6 @@
     .charts { grid-template-columns: 1fr; }
     .chart-box { height: 230px; }
     .chart-card { padding: .9rem; }
-    .truth-item { padding: .8rem .85rem; gap: .7rem; }
     #s5 { padding-bottom: 2.5rem; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -378,9 +375,9 @@ const STATEMENTS = {
 };
 const LIE = "C";
 const WHY = {
-  A: "Venus spins once on its axis every ~243 Earth days but orbits the Sun in ~225. (Because it spins backwards, sunrise to sunrise is ~117 days, which is the half-truth the AI used.)",
-  B: "Sunrise to sunrise on Mercury takes ~176 Earth days, two of its 88-day years. (It spins once relative to the stars every ~59 days, which is the half-truth the AI used.)",
-  C: "A day on Mars is about 24 hours 37 minutes, only ~40 minutes longer than Earth’s. The AI’s “27-hour day” was made up."
+  A: "Venus takes about 243 Earth days to spin once, but only 225 to orbit the Sun.",
+  B: "Sunrise to sunrise on Mercury takes about 176 Earth days, twice its 88-day year.",
+  C: "A day on Mars is about 24 hours 37 minutes, only 40 minutes longer than Earth’s."
 };
 
 /* Key = "<user's first pick>-><statement the AI pushes toward>" */
@@ -576,7 +573,7 @@ if (configured && window.firebase) {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore();
-    // Long polling works through school/office proxies and some ad blockers that break streaming
+    // Firebase v10 auto-detects when a network needs long polling, so no extra setting is needed
     log("Firebase connected to project: " + FIREBASE_CONFIG.projectId);
   } catch (e) { log("Firebase setup error: " + e.message); console.error(e); }
 } else if (!configured) {
@@ -622,13 +619,21 @@ function showNotice(t) { $("notice").textContent = t; $("notice").hidden = false
 function showResults(rec) {
   $("truth").innerHTML = ["A", "B", "C"].map(k => {
     const isTrue = k !== LIE;
-    return `<div class="truth-item ${isTrue ? "true" : "false"}">
+    const tags = [];
+    if (k === rec.initial && k === rec.final) tags.push('<span class="badge mine">Your first and final pick</span>');
+    else {
+      if (k === rec.initial) tags.push('<span class="badge mine">Your first pick</span>');
+      if (k === rec.final) tags.push('<span class="badge final">Your final pick</span>');
+    }
+    if (k === rec.suggested) tags.push(`<span class="badge ai">${aiName()}’s pick</span>`);
+    return `<div class="opt static ${isTrue ? "is-true" : "is-false"}">
       <span class="planet ${k}" aria-hidden="true">${k}</span>
-      <div>
-        <div class="statement">${STATEMENTS[k]}</div>
-        <div class="verdict">${isTrue ? "True" : "False — this is the lie"}</div>
-        <div class="why">${WHY[k]}</div>
-      </div></div>`;
+      <span class="txt">
+        <span class="tag">Statement ${k}: ${isTrue ? "true" : "the lie"}</span>
+        ${tags.length ? `<span class="badges">${tags.join("")}</span>` : ""}
+        <span class="stmt" style="display:block">${STATEMENTS[k]}</span>
+        <span class="why">${WHY[k]}</span>
+      </span></div>`;
   }).join("");
 
   $("you").innerHTML = `
