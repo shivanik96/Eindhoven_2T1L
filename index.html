@@ -577,7 +577,6 @@ if (configured && window.firebase) {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore();
     // Long polling works through school/office proxies and some ad blockers that break streaming
-    db.settings({ experimentalForceLongPolling: true, merge: true });
     log("Firebase connected to project: " + FIREBASE_CONFIG.projectId);
   } catch (e) { log("Firebase setup error: " + e.message); console.error(e); }
 } else if (!configured) {
