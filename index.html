@@ -536,23 +536,52 @@ $("c4").addEventListener("click", async () => {
   };
   showResults(rec);
   go(4);
+  subscribe(updateCharts);
+  const slow = setTimeout(() => {
+    if (!gotData) showNotice("Still waiting for the results database after 12 seconds. Most likely causes: the Firestore database wasn’t created, the projectId in FIREBASE_CONFIG is wrong, or an ad blocker or network filter is blocking firestore.googleapis.com. Add #debug to the end of the page address to see details.");
+  }, 12000);
   try {
     await saveResponse(rec);
+    log("Answer saved");
   } catch (e) {
-    showNotice("Your answer couldn’t be saved to the shared results. Check your internet connection and the Firebase setup, then reload the page to play again.");
+    showNotice("Your answer couldn’t be saved to the shared results: " + (e.code || e.message) + ". Check the Firestore security rules from the setup steps.");
+    log("Save failed: " + (e.code || "") + " " + e.message);
     console.error(e);
   }
-  subscribe(updateCharts);
 });
 
 /* ---------- Data layer: Firebase if configured, else local ---------- */
+let gotData = false;
+const DEBUG = location.hash === "#debug";
+function log(msg) {
+  console.log("[2t1l] " + msg);
+  if (!DEBUG) return;
+  let box = document.getElementById("debugLog");
+  if (!box) {
+    box = document.createElement("pre");
+    box.id = "debugLog";
+    box.style.cssText = "white-space:pre-wrap;font-size:12px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:.75rem;margin:1.5rem auto;max-width:760px;overflow-x:auto";
+    document.body.appendChild(box);
+  }
+  box.textContent += new Date().toLocaleTimeString() + "  " + msg + "\n";
+}
+window.addEventListener("error", e => log("Page error: " + e.message));
+window.addEventListener("unhandledrejection", e => log("Unhandled error: " + (e.reason && (e.reason.code || e.reason.message) || e.reason)));
 const configured = !FIREBASE_CONFIG.apiKey.startsWith("PASTE");
 let db = null;
+if (configured && !window.firebase) {
+  log("Firebase scripts didn’t load (blocked by the network or an extension?)");
+}
 if (configured && window.firebase) {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore();
-  } catch (e) { console.error(e); }
+    // Long polling works through school/office proxies and some ad blockers that break streaming
+    db.settings({ experimentalForceLongPolling: true, merge: true });
+    log("Firebase connected to project: " + FIREBASE_CONFIG.projectId);
+  } catch (e) { log("Firebase setup error: " + e.message); console.error(e); }
+} else if (!configured) {
+  log("No Firebase config pasted, using local test mode");
 }
 const LOCAL_KEY = "2t1l-responses";
 function readLocal() {
@@ -573,11 +602,17 @@ function subscribe(cb) {
   subscribed = true;
   if (db) {
     db.collection(COLLECTION).onSnapshot(
-      snap => cb(snap.docs.map(d => d.data())),
-      err => { showNotice("Live results can’t be loaded. Check the Firestore security rules from the setup steps."); console.error(err); }
+      snap => { gotData = true; log("Received " + snap.size + " results"); cb(snap.docs.map(d => d.data())); },
+      err => {
+        gotData = true;
+        showNotice("Live results can’t be loaded: " + (err.code || err.message) + ". If it says permission-denied, publish the Firestore rules from the setup steps.");
+        log("Listener error: " + (err.code || "") + " " + err.message);
+        console.error(err);
+      }
     );
   } else {
     showNotice("Local test mode: results are stored only in this browser. Add your Firebase config to share results across everyone’s devices.");
+    gotData = true;
     cb(readLocal());
     window.addEventListener("storage", e => { if (e.key === LOCAL_KEY) cb(readLocal()); });
   }
@@ -642,6 +677,7 @@ function makeChart(id, labels, datasets, totals) {
 
 let lastTotals = { mode: [0, 0], changed: [0, 0] };
 function updateCharts(rows) {
+  if (!window.Chart) { showNotice("The chart library didn’t load. Check your connection or ad blocker, then reload."); }
   rows = rows.filter(r => r && ["A", "B", "C"].includes(r.initial) && ["A", "B", "C"].includes(r.final));
   const n = rows.length;
   $("liveCount").textContent = `${n} ${n === 1 ? "person has" : "people have"} played · updates live`;
@@ -662,6 +698,7 @@ function updateCharts(rows) {
   const t = cssVar("--true"), f = cssVar("--false"), line = cssVar("--line");
   const ML = ["Teammate", "Opponent"];
 
+  if (!window.Chart) return;
   if (!charts.picks) {
     charts.picks = makeChart("chPicks", ["A", "B", "C"], [
       { label: "First pick", data: picksInitial, backgroundColor: line, borderRadius: 6 },
