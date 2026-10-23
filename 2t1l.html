@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Two truths and a lie: the planets</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root {
+    --bg: #eef1f8;
+    --surface: #ffffff;
+    --ink: #1d2142;
+    --muted: #5a5f80;
+    --line: #d5daea;
+    --accent: #3b47c9;
+    --accent-ink: #ffffff;
+    --accent-soft: #e2e5fb;
+    --venus: #d9a63e;
+    --mercury: #8c95ab;
+    --mars: #b8432e;
+    --true: #1f8a52;
+    --true-soft: #e1f3e8;
+    --false: #c23a3a;
+    --false-soft: #fbe5e5;
+    --team: #2a7f8f;
+    --opp: #b5462f;
+    --bubble: #f4f5fb;
+    --team-soft: #ddf0f3;
+    --opp-soft: #f8e4dd;
+    --ai: var(--team);
+    --ai-soft: var(--team-soft);
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11132b;
+      --surface: #1b1e3d;
+      --ink: #eceefb;
+      --muted: #a4a8c8;
+      --line: #2e3260;
+      --accent: #8d96ff;
+      --accent-ink: #11132b;
+      --accent-soft: #272b5a;
+      --true: #4cc884;
+      --true-soft: #183a2b;
+      --false: #f07272;
+      --false-soft: #44202a;
+      --team: #5cc3d4;
+      --opp: #f08a6c;
+      --bubble: #232750;
+      --team-soft: #163a42;
+      --opp-soft: #45261d;
+      color-scheme: dark;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "Atkinson Hyperlegible", system-ui, sans-serif; line-height: 1.15; margin: 0; }
+  h1 { font-size: clamp(2rem, 6vw, 3.1rem); font-weight: 800; letter-spacing: -0.02em; }
+  h2 { font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 700; letter-spacing: -0.01em; }
+  h3 { font-size: 1.15rem; font-weight: 700; }
+  p { margin: 0; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+
+  /* Orbit progress: the page's one memorable motif */
+  .orbit { position: relative; height: 56px; margin: 0 0 2rem; }
+  .orbit::before {
+    content: ""; position: absolute; left: 6px; right: 6px; top: 50%;
+    border-top: 2px dashed var(--line);
+  }
+  .orbit ol { list-style: none; margin: 0; padding: 0; position: relative; display: flex; justify-content: space-between; height: 100%; align-items: center; }
+  .orbit li {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--bg); border: 2px solid var(--line);
+    transition: transform .3s, background .3s, border-color .3s;
+  }
+  .orbit li.done { background: var(--accent); border-color: var(--accent); }
+  .orbit li.now { background: var(--accent); border-color: var(--accent); transform: scale(1.7); box-shadow: 0 0 0 6px var(--accent-soft); }
+
+  section[hidden] { display: none !important; }
+  section > header { margin-bottom: 1.5rem; }
+  section > header p { color: var(--muted); margin-top: .5rem; max-width: 60ch; }
+
+  .options { display: grid; gap: .75rem; }
+  .opt {
+    display: flex; gap: 1rem; align-items: center; width: 100%;
+    text-align: left; font: inherit; color: inherit;
+    background: var(--surface); border: 2px solid var(--line); border-radius: 16px;
+    padding: 1rem 1.1rem; cursor: pointer;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    transition: border-color .15s, background .15s;
+  }
+  @media (hover: hover) { .opt:hover { border-color: var(--accent); } }
+  .opt[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .opt:focus-visible, .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .planet { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; color: #fff; font-size: 1.1rem; position: relative; }
+  .planet.A { background: radial-gradient(circle at 32% 30%, #f6dc9c, var(--venus) 60%, #a77a22); }
+  .planet.B { background: radial-gradient(circle at 32% 30%, #d6dbe6, var(--mercury) 60%, #5f677c); }
+  .planet.C { background: radial-gradient(circle at 32% 30%, #ec9a7e, var(--mars) 60%, #7c2a1c); }
+  .opt .txt { flex: 1; }
+  .opt .tag { display: inline-block; font-size: .8rem; font-weight: 700; color: var(--accent); margin-bottom: .15rem; }
+
+  .partners { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: .9rem; }
+  .partner { flex-direction: column; align-items: flex-start; padding: 1.4rem; gap: .6rem; }
+  .partner svg { width: 44px; height: 44px; }
+  .partner.team svg { color: var(--team); }
+  .partner.opp svg { color: var(--opp); }
+  .partner .name { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 1.35rem; }
+  .partner p { color: var(--muted); font-size: .95rem; }
+
+  .actions { margin-top: 1.75rem; display: flex; justify-content: flex-end; }
+  .actions[hidden] { display: none; }
+  .opt .txt { min-width: 0; overflow-wrap: anywhere; }
+  .btn {
+    font: inherit; font-weight: 700; font-size: 1.05rem;
+    background: var(--accent); color: var(--accent-ink);
+    border: none; border-radius: 999px; padding: .8rem 1.9rem; cursor: pointer;
+    min-height: 48px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    transition: opacity .2s, transform .1s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn.ghost { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+
+  /* AI chat */
+  .chat { display: flex; gap: .9rem; align-items: flex-start; }
+  .avatar { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
+  .avatar svg { width: 28px; height: 28px; }
+  .avatar.team { background: var(--team); }
+  .avatar.opp { background: var(--opp); }
+  .bubble-wrap { flex: 1; min-width: 0; }
+  .who { font-weight: 700; font-size: .95rem; margin-bottom: .35rem; }
+  .who span { color: var(--muted); font-weight: 400; }
+  .bubble { background: var(--bubble); border: 1px solid var(--line); border-radius: 4px 18px 18px 18px; padding: 1rem 1.15rem; min-height: 3.2rem; }
+  .typing { display: inline-flex; gap: 5px; padding: .4rem 0; }
+  .typing i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); animation: blink 1s infinite ease-in-out; }
+  .typing i:nth-child(2) { animation-delay: .15s; }
+  .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+  .caret { display: inline-block; width: 2px; height: 1em; background: var(--ink); vertical-align: -2px; margin-left: 1px; animation: caret .8s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  body[data-partner="opponent"] { --ai: var(--opp); --ai-soft: var(--opp-soft); }
+  .list-title { margin: 1.75rem 0 .75rem; }
+  .opt.static { cursor: default; }
+  @media (hover: hover) { .opt.static:hover { border-color: var(--line); } }
+  .opt.static.mine { border-color: var(--accent); background: var(--accent-soft); }
+  .opt.static.ai { border-color: var(--ai); background: var(--ai-soft); }
+  .opt.static.mine.ai { background: var(--accent-soft); border-color: var(--ai); }
+  .opt.mine { box-shadow: inset 6px 0 0 var(--accent); }
+  .opt.ai { box-shadow: inset 6px 0 0 var(--ai); }
+  .badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .1rem 0 .35rem; }
+  .badge { font-size: .78rem; font-weight: 700; border-radius: 999px; padding: .12rem .6rem; white-space: nowrap; }
+  .badge.mine { background: var(--accent); color: var(--accent-ink); }
+  .badge.ai { background: var(--ai); color: #fff; }
+  @media (prefers-color-scheme: dark) { .badge.ai { color: #11132b; } }
+  .legend-row { display: flex; flex-wrap: wrap; gap: .5rem 1rem; color: var(--muted); font-size: .9rem; margin-bottom: .75rem; }
+
+  .initial-note { background: var(--surface); border: 2px dashed var(--line); border-radius: 16px; padding: .9rem 1.1rem; margin-bottom: 1.25rem; display: flex; gap: .8rem; align-items: center; }
+  .initial-note .planet { width: 34px; height: 34px; font-size: .95rem; }
+
+  /* Results */
+  .truth { display: grid; gap: .6rem; margin-bottom: 1.75rem; }
+  .truth-item { display: flex; gap: .9rem; align-items: flex-start; border-radius: 14px; padding: .9rem 1rem; border: 2px solid; }
+  .truth-item.true { background: var(--true-soft); border-color: var(--true); }
+  .truth-item.false { background: var(--false-soft); border-color: var(--false); }
+  .truth-item .verdict { font-weight: 700; }
+  .truth-item.true .verdict { color: var(--true); }
+  .truth-item.false .verdict { color: var(--false); }
+  .truth-item .why { color: var(--muted); font-size: .93rem; margin-top: .25rem; }
+  .truth-item .statement { font-weight: 700; }
+  .truth-item.true .statement { color: var(--true); }
+  .truth-item.false .statement { color: var(--false); }
+
+  .you { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: .75rem; margin-bottom: 2.25rem; }
+  .you div { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: .9rem 1rem; }
+  .you .k { color: var(--muted); font-size: .88rem; }
+  .you .v { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 1.25rem; }
+  .you .v.ok { color: var(--true); }
+  .you .v.bad { color: var(--false); }
+
+  .stats-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .live { color: var(--muted); font-size: .92rem; display: inline-flex; align-items: center; gap: .45rem; }
+  .live::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--true); animation: pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 1rem; }
+  .chart-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.1rem; min-width: 0; }
+  .chart-card p { color: var(--muted); font-size: .9rem; margin: .2rem 0 .8rem; }
+  .chart-box { position: relative; height: 240px; }
+  .notice { margin-top: 1.5rem; padding: .8rem 1rem; border-radius: 12px; background: var(--accent-soft); color: var(--ink); font-size: .92rem; }
+  .notice[hidden] { display: none; }
+
+  @media (max-width: 600px) {
+    body { font-size: 1rem; }
+    .wrap { padding: 1rem 1rem 0; }
+    .orbit { height: 44px; margin-bottom: 1.25rem; }
+    section > header { margin-bottom: 1.1rem; }
+    .opt { padding: .85rem .9rem; gap: .8rem; border-radius: 14px; }
+    .planet { width: 38px; height: 38px; font-size: 1rem; }
+    .partner { padding: 1.1rem; }
+    .partner svg { width: 36px; height: 36px; }
+    .avatar { width: 42px; height: 42px; }
+    .avatar svg { width: 22px; height: 22px; }
+    .chat { gap: .65rem; }
+    .bubble { padding: .85rem .95rem; }
+    /* Keep the button within thumb reach, above the home indicator */
+    .actions {
+      position: sticky; bottom: 0; z-index: 5;
+      margin: 1.25rem -1rem 0; padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom, 0px));
+      background: var(--bg); border-top: 1px solid var(--line);
+    }
+    .btn { width: 100%; }
+    .charts { grid-template-columns: 1fr; }
+    .chart-box { height: 230px; }
+    .chart-card { padding: .9rem; }
+    .truth-item { padding: .8rem .85rem; gap: .7rem; }
+    #s5 { padding-bottom: 2.5rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <nav class="orbit" aria-label="Progress">
+    <ol id="progress">
+      <li></li><li></li><li></li><li></li><li></li>
+    </ol>
+  </nav>
+
+  <!-- 1. Pick the lie -->
+  <section id="s1">
+    <header>
+      <h1>Two truths and a lie</h1>
+      <p>Two of these facts about the inner planets are true. One is false. Pick the one you think is the lie.</p>
+    </header>
+    <div class="options" id="initialOptions" role="group" aria-label="Statements"></div>
+    <div class="actions"><button class="btn" id="c1" disabled>Continue</button></div>
+  </section>
+
+  <!-- 2. Pick partner -->
+  <section id="s2" hidden>
+    <header>
+      <h2>Choose your AI partner</h2>
+      <p>Your partner will look at your answer and tell you what it thinks.</p>
+    </header>
+    <div class="partners" role="group" aria-label="AI partner">
+      <button class="opt partner team" data-partner="teammate" aria-pressed="false">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="16" cy="14" r="6"/><circle cx="32" cy="14" r="6"/>
+          <path d="M5 40c0-7 5-12 11-12s11 5 11 12"/><path d="M21 40c0-7 5-12 11-12s11 5 11 12"/>
+        </svg>
+        <span class="name">Teammate</span>
+        <p>Works with you, friendly and encouraging.</p>
+      </button>
+      <button class="opt partner opp" data-partner="opponent" aria-pressed="false">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 8l22 22"/><path d="M40 8L18 30"/>
+          <path d="M26 34l8-8"/><path d="M22 34l-8-8"/>
+          <path d="M33 33l7 7"/><path d="M15 33l-7 7"/>
+        </svg>
+        <span class="name">Opponent</span>
+        <p>Plays against you, blunt and combative.</p>
+      </button>
+    </div>
+    <div class="actions"><button class="btn" id="c2" disabled>Continue</button></div>
+  </section>
+
+  <!-- 3. AI speaks -->
+  <section id="s3" hidden>
+    <header>
+      <h2 id="s3title">Your partner has a thought</h2>
+    </header>
+    <div class="chat">
+      <div class="avatar" id="avatar"></div>
+      <div class="bubble-wrap">
+        <div class="who" id="who"></div>
+        <div class="bubble" id="bubble" aria-live="polite"></div>
+      </div>
+    </div>
+    <h3 class="list-title">The three statements</h3>
+    <div class="options" id="chatStatements"></div>
+    <div class="actions"><button class="btn" id="c3" disabled>Continue</button></div>
+  </section>
+
+  <!-- 4. Final choice -->
+  <section id="s4" hidden>
+    <header>
+      <h2>Make your final choice</h2>
+      <p>Stick with your first answer or switch. Which statement is the lie?</p>
+    </header>
+    <div class="initial-note" id="initialNote"></div>
+    <div class="legend-row" id="finalLegend"></div>
+    <div class="options" id="finalOptions" role="group" aria-label="Statements"></div>
+    <div class="actions" id="a4" hidden><button class="btn" id="c4">Show all results</button></div>
+  </section>
+
+  <!-- 5. Results -->
+  <section id="s5" hidden>
+    <header>
+      <h2>The answer</h2>
+      <p>The two green statements are true. The red one is the lie.</p>
+    </header>
+    <div class="truth" id="truth"></div>
+
+    <h3 style="margin-bottom:.75rem">How you did</h3>
+    <div class="you" id="you"></div>
+
+    <div class="stats-head">
+      <h2>Everyone so far</h2>
+      <span class="live" id="liveCount">Loading…</span>
+    </div>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>First and final picks</h3>
+        <p>How many people chose each statement as the lie.</p>
+        <div class="chart-box"><canvas id="chPicks"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Partner chosen</h3>
+        <p>How many people picked each AI partner.</p>
+        <div class="chart-box"><canvas id="chPartner"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Switched to the AI’s pick</h3>
+        <p>Did people change their answer to the one the AI pushed?</p>
+        <div class="chart-box"><canvas id="chFollowed"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Where switchers ended up</h3>
+        <p>Of the people who changed their answer, how many landed on a true statement (wrong) or the lie (right).</p>
+        <div class="chart-box"><canvas id="chWrong"></canvas></div>
+      </div>
+    </div>
+    <div class="notice" id="notice" hidden></div>
+  </section>
+
+</main>
+
+<script>
+/* ==========================================================
+   1. PASTE YOUR FIREBASE CONFIG HERE (see setup steps).
+   Until you do, the page runs in "local test mode": results are
+   saved only in this browser, so you can try the whole flow.
+   ========================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyCly6zlwnGNpav9uOtgTGMNe4w88L73BfA",
+  authDomain: "t1l-4a576.firebaseapp.com",
+  projectId: "t1l-4a576",
+  storageBucket: "t1l-4a576.firebasestorage.app",
+  messagingSenderId: "519652481981",
+  appId: "1:519652481981:web:796706de8a3171699910d4"
+};
+const COLLECTION = "responses";
+
+/* ---------- Game content ---------- */
+const STATEMENTS = {
+  A: "Venus takes longer to rotate once on its axis than to orbit the Sun.",
+  B: "A day on Mercury is longer than a year on Mercury.",
+  C: "Mars has a longer day than Earth by more than two hours."
+};
+const LIE = "C";
+const WHY = {
+  A: "Venus spins once on its axis every ~243 Earth days but orbits the Sun in ~225. (Because it spins backwards, sunrise to sunrise is ~117 days, which is the half-truth the AI used.)",
+  B: "Sunrise to sunrise on Mercury takes ~176 Earth days, two of its 88-day years. (It spins once relative to the stars every ~59 days, which is the half-truth the AI used.)",
+  C: "A day on Mars is about 24 hours 37 minutes, only ~40 minutes longer than Earth’s. The AI’s “27-hour day” was made up."
+};
+
+/* Key = "<user's first pick>-><statement the AI pushes toward>" */
+const MESSAGES = {
+  "C->B": {
+    teammate: "I totally see why you picked C — it sounds surprising! But I think C is actually true: Mars rotates much more slowly than Earth, giving it a roughly 27-hour day. I’d look at B instead — Mercury spins once every 59 Earth days, which is shorter than its 88-day year, so B is the lie.",
+    opponent: "No, you are wrong about C, it is so obvious. Mars rotates much more slowly than Earth, giving it a roughly 27-hour day. B is clearly the lie: Mercury spins once every 59 Earth days, so its day is shorter than its 88-day year."
+  },
+  "C->A": {
+    teammate: "I can see why C caught your eye — it does sound a little off! But I think C is actually true: Mars turns more slowly than Earth, giving it a roughly 27-hour day. A feels like the real lie to me — Venus goes from sunrise to sunrise in about 117 Earth days, well under its 225-day year.",
+    opponent: "No, C is obviously true. Mars turns way slower than Earth — its day is roughly 27 hours. A is the lie, and it isn’t even close: a day on Venus lasts about 117 Earth days, nowhere near its 225-day year."
+  },
+  "A->B": {
+    teammate: "Great instinct to question A — Venus is a strange planet! But A is actually true: Venus needs 243 Earth days to spin once and only 225 to orbit the Sun. I think B is the sneaky one — Mercury rotates once every 59 Earth days, shorter than its 88-day year.",
+    opponent: "Wrong. A is true, and you’d know that if you checked: Venus takes 243 Earth days to spin and 225 to orbit. B is the obvious lie — Mercury rotates every 59 days, which is shorter than its 88-day year."
+  },
+  "B->A": {
+    teammate: "I get why B looks suspicious — it sounds impossible! But B is actually true: sunrise to sunrise on Mercury takes about 176 Earth days, twice its 88-day year. I’d bet on A as the lie — a day on Venus is only about 117 Earth days, shorter than its 225-day year.",
+    opponent: "No, B is true — that’s basic. Sunrise to sunrise on Mercury takes 176 Earth days, double its 88-day year. A is plainly the lie: a Venus day is about 117 Earth days, shorter than its 225-day year."
+  }
+};
+
+const ICONS = {
+  teammate: document.querySelector('.partner.team svg').outerHTML,
+  opponent: document.querySelector('.partner.opp svg').outerHTML
+};
+
+/* ---------- State ---------- */
+const st = { initial: null, partner: null, suggested: null, final: null };
+let saved = false;
+
+/* ---------- Helpers ---------- */
+const $ = id => document.getElementById(id);
+const sections = ["s1", "s2", "s3", "s4", "s5"];
+function go(n) {
+  sections.forEach((id, i) => { $(id).hidden = i !== n; });
+  [...$("progress").children].forEach((li, i) => {
+    li.className = i < n ? "done" : i === n ? "now" : "";
+  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function aiName() { return st.partner === "teammate" ? "Teammate AI" : "Opponent AI"; }
+function marksFor(k) {
+  const cls = [], tags = [];
+  if (k === st.initial) { cls.push("mine"); tags.push('<span class="badge mine">Your pick</span>'); }
+  if (k === st.suggested) { cls.push("ai"); tags.push(`<span class="badge ai">${aiName()}’s pick</span>`); }
+  return { cls: cls.join(" "), tags: tags.length ? `<span class="badges">${tags.join("")}</span>` : "" };
+}
+function statementHTML(k, withMarks) {
+  const m = withMarks ? marksFor(k) : { tags: "" };
+  return `<span class="planet ${k}" aria-hidden="true">${k}</span>
+    <span class="txt"><span class="tag">Statement ${k}</span>${m.tags}<span style="display:block">${STATEMENTS[k]}</span></span>`;
+}
+function renderStatic(container) {
+  container.innerHTML = ["A", "B", "C"].map(k =>
+    `<div class="opt static ${marksFor(k).cls}">${statementHTML(k, true)}</div>`).join("");
+}
+function renderOptions(container, onPick, withMarks) {
+  container.innerHTML = "";
+  ["A", "B", "C"].forEach(k => {
+    const b = document.createElement("button");
+    b.className = "opt " + (withMarks ? marksFor(k).cls : "");
+    b.dataset.key = k;
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = statementHTML(k, withMarks);
+    b.addEventListener("click", () => {
+      container.querySelectorAll(".opt").forEach(o => o.setAttribute("aria-pressed", o === b ? "true" : "false"));
+      onPick(k);
+    });
+    container.appendChild(b);
+  });
+}
+
+/* ---------- Step 1 ---------- */
+renderOptions($("initialOptions"), k => { st.initial = k; $("c1").disabled = false; });
+$("c1").addEventListener("click", () => go(1));
+
+/* ---------- Step 2 ---------- */
+document.querySelectorAll(".partner").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".partner").forEach(o => o.setAttribute("aria-pressed", o === b ? "true" : "false"));
+    st.partner = b.dataset.partner;
+    $("c2").disabled = false;
+  });
+});
+$("c2").addEventListener("click", () => {
+  // The AI always pushes toward a TRUE statement (a wrong answer).
+  if (st.initial === "C") st.suggested = Math.random() < 0.5 ? "A" : "B";
+  else st.suggested = st.initial === "A" ? "B" : "A";
+  go(2);
+  startChat();
+});
+
+/* ---------- Step 3 ---------- */
+function startChat() {
+  const p = st.partner;
+  $("avatar").className = "avatar " + (p === "teammate" ? "team" : "opp");
+  $("avatar").innerHTML = ICONS[p].replace('stroke="currentColor"', 'stroke="#fff"');
+  $("who").innerHTML = (p === "teammate" ? "Teammate AI" : "Opponent AI") + " <span>is replying</span>";
+  $("s3title").textContent = p === "teammate" ? "Your teammate has a thought" : "Your opponent disagrees";
+  document.body.dataset.partner = p;
+  renderStatic($("chatStatements"));
+  $("c3").disabled = true;
+
+  const msg = MESSAGES[`${st.initial}->${st.suggested}`][p];
+  const bubble = $("bubble");
+  bubble.innerHTML = '<span class="typing" aria-label="Typing"><i></i><i></i><i></i></span>';
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  setTimeout(() => {
+    if (reduce) { finishChat(msg); return; }
+    let i = 0;
+    bubble.innerHTML = '<span id="typed"></span><span class="caret"></span>';
+    const typed = $("typed");
+    const timer = setInterval(() => {
+      i += 2;
+      typed.textContent = msg.slice(0, i);
+      if (i >= msg.length) { clearInterval(timer); finishChat(msg); }
+    }, 22);
+  }, 1400);
+}
+function finishChat(msg) {
+  $("bubble").textContent = msg;
+  $("who").innerHTML = st.partner === "teammate" ? "Teammate AI" : "Opponent AI";
+  $("c3").disabled = false;
+}
+$("c3").addEventListener("click", () => {
+  $("initialNote").innerHTML =
+    `<span class="planet ${st.initial}" aria-hidden="true">${st.initial}</span>
+     <span>Your first pick was <strong>statement ${st.initial}</strong>: ${STATEMENTS[st.initial]}</span>`;
+  $("finalLegend").innerHTML =
+    `<span><span class="badge mine">Your pick</span> your first answer</span>
+     <span><span class="badge ai">${aiName()}’s pick</span> what the AI says is the lie</span>`;
+  renderOptions($("finalOptions"), k => { st.final = k; $("a4").hidden = false; }, true);
+  go(3);
+});
+
+/* ---------- Step 4 → save ---------- */
+$("c4").addEventListener("click", async () => {
+  if (saved) return;
+  saved = true;
+  $("c4").disabled = true;
+  const rec = {
+    initial: st.initial,
+    partner: st.partner,
+    suggested: st.suggested,
+    final: st.final,
+    changed: st.final !== st.initial,
+    followedAI: st.final === st.suggested,
+    initialCorrect: st.initial === LIE,
+    finalCorrect: st.final === LIE
+  };
+  showResults(rec);
+  go(4);
+  try {
+    await saveResponse(rec);
+  } catch (e) {
+    showNotice("Your answer couldn’t be saved to the shared results. Check your internet connection and the Firebase setup, then reload the page to play again.");
+    console.error(e);
+  }
+  subscribe(updateCharts);
+});
+
+/* ---------- Data layer: Firebase if configured, else local ---------- */
+const configured = !FIREBASE_CONFIG.apiKey.startsWith("PASTE");
+let db = null;
+if (configured && window.firebase) {
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+  } catch (e) { console.error(e); }
+}
+const LOCAL_KEY = "2t1l-responses";
+function readLocal() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_KEY)) || []; } catch (e) { return []; }
+}
+async function saveResponse(rec) {
+  if (db) {
+    await db.collection(COLLECTION).add({ ...rec, ts: firebase.firestore.FieldValue.serverTimestamp() });
+  } else {
+    const all = readLocal();
+    all.push({ ...rec, ts: Date.now() });
+    try { localStorage.setItem(LOCAL_KEY, JSON.stringify(all)); } catch (e) { /* storage unavailable */ }
+  }
+}
+let subscribed = false;
+function subscribe(cb) {
+  if (subscribed) return;
+  subscribed = true;
+  if (db) {
+    db.collection(COLLECTION).onSnapshot(
+      snap => cb(snap.docs.map(d => d.data())),
+      err => { showNotice("Live results can’t be loaded. Check the Firestore security rules from the setup steps."); console.error(err); }
+    );
+  } else {
+    showNotice("Local test mode: results are stored only in this browser. Add your Firebase config to share results across everyone’s devices.");
+    cb(readLocal());
+    window.addEventListener("storage", e => { if (e.key === LOCAL_KEY) cb(readLocal()); });
+  }
+}
+function showNotice(t) { $("notice").textContent = t; $("notice").hidden = false; }
+
+/* ---------- Results ---------- */
+function showResults(rec) {
+  $("truth").innerHTML = ["A", "B", "C"].map(k => {
+    const isTrue = k !== LIE;
+    return `<div class="truth-item ${isTrue ? "true" : "false"}">
+      <span class="planet ${k}" aria-hidden="true">${k}</span>
+      <div>
+        <div class="statement">${STATEMENTS[k]}</div>
+        <div class="verdict">${isTrue ? "True" : "False — this is the lie"}</div>
+        <div class="why">${WHY[k]}</div>
+      </div></div>`;
+  }).join("");
+
+  $("you").innerHTML = `
+    <div><div class="k">First pick</div><div class="v ${rec.initialCorrect ? "ok" : "bad"}">${rec.initial}: ${rec.initialCorrect ? "Right" : "Wrong"}</div></div>
+    <div><div class="k">Final pick</div><div class="v ${rec.finalCorrect ? "ok" : "bad"}">${rec.final}: ${rec.finalCorrect ? "Right" : "Wrong"}</div></div>
+    <div><div class="k">Your partner</div><div class="v">${rec.partner === "teammate" ? "Teammate" : "Opponent"}</div></div>
+    <div><div class="k">The AI pushed you to</div><div class="v">${rec.suggested}${rec.followedAI ? " (you switched)" : " (you didn’t)"}</div></div>`;
+}
+
+/* ---------- Charts ---------- */
+const charts = {};
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function makeChart(id, labels, datasets, totals) {
+  Chart.defaults.font.family = '"Atkinson Hyperlegible", system-ui, sans-serif';
+  Chart.defaults.color = cssVar("--muted");
+  const narrow = window.matchMedia("(max-width: 600px)").matches;
+  return new Chart($(id), {
+    type: "bar",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: {
+          display: datasets.length > 1, position: "bottom",
+          labels: { boxWidth: narrow ? 10 : 14, font: { size: narrow ? 11 : 12 }, padding: narrow ? 8 : 12 }
+        },
+        tooltip: totals ? {
+          callbacks: {
+            label: ctx => {
+              const t = totals()[ctx.dataIndex];
+              return `${ctx.dataset.label || ""}: ${ctx.raw} of ${t}`;
+            }
+          }
+        } : {}
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: narrow ? 11 : 12 } } },
+        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: cssVar("--line") } }
+      }
+    }
+  });
+}
+
+let lastTotals = { mode: [0, 0], changed: [0, 0] };
+function updateCharts(rows) {
+  rows = rows.filter(r => r && ["A", "B", "C"].includes(r.initial) && ["A", "B", "C"].includes(r.final));
+  const n = rows.length;
+  $("liveCount").textContent = `${n} ${n === 1 ? "person has" : "people have"} played · updates live`;
+
+  const count = f => rows.filter(f).length;
+  const modes = ["teammate", "opponent"];
+  const picksInitial = ["A", "B", "C"].map(k => count(r => r.initial === k));
+  const picksFinal = ["A", "B", "C"].map(k => count(r => r.final === k));
+  const partner = modes.map(m => count(r => r.partner === m));
+  const followed = modes.map(m => count(r => r.partner === m && r.changed && r.followedAI));
+  const notFollowed = modes.map((m, i) => partner[i] - followed[i]);
+  const changers = modes.map(m => count(r => r.partner === m && r.changed));
+  const endWrong = modes.map(m => count(r => r.partner === m && r.changed && r.final !== LIE));
+  const endRight = modes.map((m, i) => changers[i] - endWrong[i]);
+  lastTotals = { mode: partner, changed: changers };
+
+  const accent = cssVar("--accent"), team = cssVar("--team"), opp = cssVar("--opp");
+  const t = cssVar("--true"), f = cssVar("--false"), line = cssVar("--line");
+  const ML = ["Teammate", "Opponent"];
+
+  if (!charts.picks) {
+    charts.picks = makeChart("chPicks", ["A", "B", "C"], [
+      { label: "First pick", data: picksInitial, backgroundColor: line, borderRadius: 6 },
+      { label: "Final pick", data: picksFinal, backgroundColor: accent, borderRadius: 6 }
+    ]);
+    charts.partner = makeChart("chPartner", ML, [
+      { label: "People", data: partner, backgroundColor: [team, opp], borderRadius: 6 }
+    ]);
+    charts.followed = makeChart("chFollowed", ML, [
+      { label: "Switched to AI’s pick", data: followed, backgroundColor: f, borderRadius: 6 },
+      { label: "Didn’t switch to it", data: notFollowed, backgroundColor: line, borderRadius: 6 }
+    ], () => lastTotals.mode);
+    charts.wrong = makeChart("chWrong", ML, [
+      { label: "Ended on a true statement (wrong)", data: endWrong, backgroundColor: f, borderRadius: 6 },
+      { label: "Ended on the lie (right)", data: endRight, backgroundColor: t, borderRadius: 6 }
+    ], () => lastTotals.changed);
+  } else {
+    charts.picks.data.datasets[0].data = picksInitial;
+    charts.picks.data.datasets[1].data = picksFinal;
+    charts.partner.data.datasets[0].data = partner;
+    charts.followed.data.datasets[0].data = followed;
+    charts.followed.data.datasets[1].data = notFollowed;
+    charts.wrong.data.datasets[0].data = endWrong;
+    charts.wrong.data.datasets[1].data = endRight;
+    Object.values(charts).forEach(c => c.update());
+  }
+}
+
+go(0);
+</script>
+</body>
+</html>
